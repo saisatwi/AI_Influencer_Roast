@@ -1,0 +1,9 @@
+streamlit
+requests
+beautifulsoup4
+python-dotenv
+moviepy
+pydub
+tqdm
+groq
+elevenlabs
