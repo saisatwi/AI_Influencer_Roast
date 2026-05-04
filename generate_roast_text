@@ -1,0 +1,5 @@
+prompt = (
+    f"Act as a Gen-Z viral influencer. Write a short, 30-second sarcastic roast "
+    f"about this product: {product_title}. "
+    f"Focus on why it's overpriced or unnecessary. Keep it under 60 words."
+)

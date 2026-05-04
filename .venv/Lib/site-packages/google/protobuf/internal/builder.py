@@ -23,6 +23,15 @@ from google.protobuf import symbol_database as _symbol_database
 _sym_db = _symbol_database.Default()
 
 
+def _BuildNestedDescriptors(module, msg_des, prefix):
+  for name, nested_msg in msg_des.nested_types_by_name.items():
+    module_name = prefix + name.upper()
+    module[module_name] = nested_msg
+    _BuildNestedDescriptors(module, nested_msg, module_name + '_')
+  for enum_des in msg_des.enum_types:
+    module[prefix + enum_des.name.upper()] = enum_des
+
+
 def BuildMessageAndEnumDescriptors(file_des, module):
   """Builds message and enum descriptors.
 
@@ -30,19 +39,26 @@ def BuildMessageAndEnumDescriptors(file_des, module):
     file_des: FileDescriptor of the .proto file
     module: Generated _pb2 module
   """
-
-  def BuildNestedDescriptors(msg_des, prefix):
-    for (name, nested_msg) in msg_des.nested_types_by_name.items():
-      module_name = prefix + name.upper()
-      module[module_name] = nested_msg
-      BuildNestedDescriptors(nested_msg, module_name + '_')
-    for enum_des in msg_des.enum_types:
-      module[prefix + enum_des.name.upper()] = enum_des
-
   for (name, msg_des) in file_des.message_types_by_name.items():
     module_name = '_' + name.upper()
     module[module_name] = msg_des
-    BuildNestedDescriptors(msg_des, module_name + '_')
+    _BuildNestedDescriptors(module, msg_des, module_name + '_')
+
+
+def _BuildMessage(module_name, msg_des, prefix):
+  create_dict = {}
+  for name, nested_msg in msg_des.nested_types_by_name.items():
+    create_dict[name] = _BuildMessage(
+        module_name, nested_msg, prefix + msg_des.name + '.'
+    )
+  create_dict['DESCRIPTOR'] = msg_des
+  create_dict['__module__'] = module_name
+  create_dict['__qualname__'] = prefix + msg_des.name
+  message_class = _reflection.GeneratedProtocolMessageType(
+      msg_des.name, (_message.Message,), create_dict
+  )
+  _sym_db.RegisterMessage(message_class)
+  return message_class
 
 
 def BuildTopDescriptorsAndMessages(file_des, module_name, module):
@@ -53,17 +69,6 @@ def BuildTopDescriptorsAndMessages(file_des, module_name, module):
     module_name: str, the name of generated _pb2 module
     module: Generated _pb2 module
   """
-
-  def BuildMessage(msg_des):
-    create_dict = {}
-    for (name, nested_msg) in msg_des.nested_types_by_name.items():
-      create_dict[name] = BuildMessage(nested_msg)
-    create_dict['DESCRIPTOR'] = msg_des
-    create_dict['__module__'] = module_name
-    message_class = _reflection.GeneratedProtocolMessageType(
-        msg_des.name, (_message.Message,), create_dict)
-    _sym_db.RegisterMessage(message_class)
-    return message_class
 
   # top level enums
   for (name, enum_des) in file_des.enum_types_by_name.items():
@@ -83,7 +88,7 @@ def BuildTopDescriptorsAndMessages(file_des, module_name, module):
 
   # Build messages.
   for (name, msg_des) in file_des.message_types_by_name.items():
-    module[name] = BuildMessage(msg_des)
+    module[name] = _BuildMessage(module_name, msg_des, '')
 
 
 def AddHelpersToExtensions(file_des):
@@ -105,12 +110,11 @@ def BuildServices(file_des, module_name, module):
     module: Generated _pb2 module
   """
   # pylint: disable=g-import-not-at-top
-  from google.protobuf import service as _service
   from google.protobuf import service_reflection
   # pylint: enable=g-import-not-at-top
   for (name, service) in file_des.services_by_name.items():
     module[name] = service_reflection.GeneratedServiceType(
-        name, (_service.Service,),
+        name, (),
         dict(DESCRIPTOR=service, __module__=module_name))
     stub_name = name + '_Stub'
     module[stub_name] = service_reflection.GeneratedServiceStubType(

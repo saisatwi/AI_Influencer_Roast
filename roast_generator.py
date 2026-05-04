@@ -1,69 +1,70 @@
-import os
-import requests
-import wave
-import numpy as np
+import os, re, random
+from pathlib import Path
 from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+
 from groq import Groq
-from elevenlabs import ElevenLabs
+from elevenlabs.client import ElevenLabs
 
-# Load environment variables
-load_dotenv(dotenv_path=".env")
+VOICE_OPTIONS = {
+    "adam":   "pNInz6obpgDQGcFmaJgB",
+    "rachel": "21m00Tcm4TlvDq8ikWAM",
+    "josh":   "TxGEqnHWrfWFTfGW9XjX",
+}
+DEFAULT_VOICE = "adam"
 
-groq_key = os.getenv("GROQ_API_KEY")
-eleven_key = os.getenv("ELEVENLABS_API_KEY")
-voice_id = os.getenv("ELEVENLABS_VOICE_ID", "1xGjguWhviQbtIy2dkrh")
+SYSTEM_PROMPT = (
+    "You are a ruthless stand-up comedian who roasts consumer products. "
+    "Be savage, specific, and hilarious — never generic. "
+    "Write EXACTLY 2 punchy sentences. No asterisks, no markdown. Output only the roast."
+)
+FALLBACKS = [
+    "This product looks like it was designed by someone who lost a bet with themselves. Even the recycling bin swiped left.",
+    "Whoever greenlit this confused 'innovative' with 'irrelevant'. It's the participation trophy of consumer goods.",
+    "This thing is so underwhelming, it makes disappointment look exciting. Return it before it lowers your IQ by proximity.",
+    "This product screams 2am brainstorm with zero sleep and even less shame. The warranty expired before the box was opened.",
+]
 
-# Ensure folders exist
-os.makedirs("voice", exist_ok=True)
-
-groq_client = Groq(api_key=groq_key)
-eleven_client = ElevenLabs(api_key=eleven_key)
-
-def get_supported_model() -> str:
-    """Fetch available Groq models and return a usable one."""
-    url = "https://api.groq.com/openai/v1/models"
-    headers = {"Authorization": f"Bearer {groq_key}"}
-    resp = requests.get(url, headers=headers)
-    data = resp.json()
-    for m in data.get("data", []):
-        model_id = m.get("id", "")
-        if "instruct" in model_id or "it" in model_id:
-            return model_id
-    if data.get("data"):
-        return data["data"][0]["id"]
-    raise RuntimeError("No supported Groq models found")
-
-def generate_roast_text(product_title: str) -> str:
-    """Generate roast text using Groq LLM with a live model."""
-    model_id = get_supported_model()
-    prompt = f"Write a sarcastic influencer-style roast about the product: {product_title}"
-    response = groq_client.chat.completions.create(
-        model=model_id,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=120,
-        temperature=0.9
-    )
-    return response.choices[0].message.content.strip()
-
-def generate_roast_audio(roast_text: str, idx: int = 0) -> str:
-    """Convert roast text to audio using ElevenLabs, with quota fallback."""
-    file_path = f"voice/roast_clip_{idx}.mp3"
+def generate_roast_text(title: str) -> str:
     try:
-        audio_stream = eleven_client.text_to_speech.convert(
-            voice_id=voice_id,
-            text=roast_text
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        res = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user",   "content": f"Product: {title[:150]}"},
+            ],
+            temperature=1.0,
+            max_tokens=150,
         )
-        with open(file_path, "wb") as f:
-            for chunk in audio_stream:
-                f.write(chunk)
-        return file_path
+        clean = re.sub(r'[*_`#"]', "", res.choices[0].message.content.strip())
+        return clean if len(clean) > 20 else random.choice(FALLBACKS)
     except Exception as e:
-        # Fallback: generate silent audio if quota exceeded
-        with wave.open(file_path, "w") as f:
-            f.setnchannels(1)
-            f.setsampwidth(2)
-            f.setframerate(44100)
-            silence = (np.zeros(44100)).astype("int16").tobytes()
-            f.writeframes(silence)
-        print(f"[Fallback] Audio generation failed: {e}")
-        return file_path
+        print(f"[roast_generator] Groq error: {e}")
+        return random.choice(FALLBACKS)
+
+
+def generate_roast_audio(text: str, idx: int, voice: str = DEFAULT_VOICE) -> str | None:
+    os.makedirs("voice", exist_ok=True)
+    audio_path  = f"voice/roast_{idx}.mp3"
+    backup_path = f"voice/roast_{idx}.txt"
+
+    with open(backup_path, "w") as f:   # text backup always written first
+        f.write(text)
+
+    try:
+        client   = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
+        voice_id = VOICE_OPTIONS.get(voice, VOICE_OPTIONS[DEFAULT_VOICE])
+        chunks   = client.text_to_speech.convert(
+            voice_id=voice_id, text=text,
+            model_id="eleven_multilingual_v2",
+            output_format="mp3_44100_128",
+        )
+        with open(audio_path, "wb") as f:
+            for chunk in chunks:
+                if chunk: f.write(chunk)
+        return audio_path
+    except Exception as e:
+        print(f"[roast_generator] ElevenLabs error: {e}")
+        return None

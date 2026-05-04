@@ -2,106 +2,83 @@ import streamlit as st
 import requests
 import os
 from dotenv import load_dotenv
-from roast_generator import generate_roast_text, generate_roast_audio, get_supported_model
+from serpapi import GoogleSearch # Ensure pip install google-search-results
+from roast_generator import generate_roast_text, generate_roast_audio
 from video_generator import create_roast_video
 
-# Load API keys
-load_dotenv(dotenv_path=".env")
-RAINFOREST_KEY = os.getenv("RAINFOREST_KEY")
-voice_id = os.getenv("ELEVENLABS_VOICE_ID", "1xGjguWhviQbtIy2dkrh")
+load_dotenv()
 
-# Ensure folders exist
-os.makedirs("images", exist_ok=True)
-os.makedirs("voice", exist_ok=True)
-os.makedirs("video", exist_ok=True)
+# Workspace setup
+for folder in ["images", "voice", "video"]:
+    os.makedirs(folder, exist_ok=True)
 
-st.set_page_config(page_title="AI Influencer Roast", layout="wide")
-st.title("🔥 AI Influencer Roast 🔥")
+st.set_page_config(page_title="AI Roast | SerpApi Edition", layout="wide")
+st.title("🔥 AI Influencer Roast (Universal Search)")
 
-# Sidebar controls
-use_demo = st.sidebar.checkbox("Demo Mode (skip ElevenLabs)", value=False)
-roast_style = st.sidebar.selectbox("Roast Style", ["Savage", "Playful", "Influencer"])
-persona = st.sidebar.selectbox("Persona", ["Tech Reviewer", "Fashion Blogger", "Gamer Roast"])
+# NEW API KEY HANDLING
+SERP_KEY = os.getenv("SERPAPI_KEY")
 
-def run_search(query: str):
-    url = "https://api.rainforestapi.com/request"
-    params = {
-        "api_key": RAINFOREST_KEY,
-        "amazon_domain": "amazon.com",
-        "type": "search",
-        "search_term": query
-    }
-    with st.spinner("🔍 Searching Amazon..."):
-        rainforest_data = requests.get(url, params=params).json()
-    results = rainforest_data.get("search_results", [])
+query = st.text_input("Product Name (e.g., Casio Watch, Toy, Book):", placeholder="Enter item...")
 
-    if not results:
-        st.warning("No products found.")
-        return
+if st.button("Generate Video", width='stretch'):
+    if not query:
+        st.error("Please enter a product.")
+    else:
+        status = st.empty()
+        try:
+            status.info(f"🔍 Searching Amazon for '{query}'...")
+            
+            # SERPAPI AMAZON ENGINE (2026 Logic)
+            search = GoogleSearch({
+                "engine": "amazon",
+                "k": query,
+                "api_key": SERP_KEY,
+                "amazon_domain": "amazon.com",
+                "type": "search"
+            })
+            data = search.get_dict()
 
-    for idx, product in enumerate(results[:3]):
-        st.markdown(f"## Variation {idx+1}")
-        st.image(product.get("image"), caption=product.get("title"))
-        st.write(f"**{product.get('title')}**")
-        st.write(f"[View on Amazon]({product.get('link')})")
+            # The 'Catch-All' Extractor: Handles different Amazon layouts
+            # We combine all possible result lists to ensure we find SOMETHING
+            all_found = (
+                data.get("organic_results", []) + 
+                data.get("sponsored_products", []) + 
+                data.get("shopping_results", [])
+            )
 
-        # Roast text
-        with st.spinner("🎤 Generating roast text..."):
-            prompt = f"Write a {roast_style.lower()} roast in the style of a {persona} about: {product.get('title')}"
-            roast_text = generate_roast_text(prompt)
-        st.subheader("AI Roast Text")
-        st.write(roast_text)
+            if not all_found:
+                st.error("No results found. Try a more specific brand name.")
+                st.stop()
 
-        # Roast audio
-        audio_file = None
-        if not use_demo:
-            with st.spinner("🎧 Generating roast audio..."):
-                audio_file = generate_roast_audio(roast_text, idx)
-                st.audio(audio_file, format="audio/mp3")
-        else:
-            st.info("Demo mode active: skipping ElevenLabs audio.")
-            audio_file = f"voice/demo_roast_{idx}.mp3"
-            import wave, numpy as np
-            with wave.open(audio_file, "w") as f:
-                f.setnchannels(1)
-                f.setsampwidth(2)
-                f.setframerate(44100)
-                silence = (np.zeros(44100)).astype("int16").tobytes()
-                f.writeframes(silence)
-            st.audio(audio_file, format="audio/mp3")
+            # Select the first item that has a valid image
+            product = next((item for item in all_found if item.get("thumbnail")), all_found[0])
+            title = product.get("title", "Unknown Product")
+            img_url = product.get("thumbnail") or product.get("image")
 
-        # Roast video
-        if product.get("image") and audio_file:
-            img_path = f"images/product_{idx}.jpg"
-            try:
-                img_data = requests.get(product["image"]).content
-                with open(img_path, "wb") as f:
-                    f.write(img_data)
-                with st.spinner("🎬 Creating roast video..."):
-                    video_file = create_roast_video(img_path, audio_file, roast_text, idx)
-                st.subheader("AI Roast Video")
-                st.video(video_file)
+            # 2. IMAGE DOWNLOAD (With standard headers to avoid 403)
+            status.info("📸 Downloading media...")
+            img_path = "images/raw_product.jpg"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            img_data = requests.get(img_url, headers=headers).content
+            
+            with open(img_path, "wb") as f:
+                f.write(img_data)
 
-                # Download button
-                with open(video_file, "rb") as f:
-                    st.download_button(
-                        label="⬇️ Download Roast Video",
-                        data=f,
-                        file_name=f"roast_video_{idx}.mp4",
-                        mime="video/mp4"
-                    )
-            except Exception as e:
-                st.error(f"Video generation failed: {e}")
+            # 3. ROAST & VOICE (Groq + ElevenLabs)
+            status.info("🎙️ Generating Roast & Voice...")
+            roast = generate_roast_text(title)
+            st.markdown(f"**Script:** {roast}")
+            
+            audio_p = generate_roast_audio(roast, 0)
+            
+            # 4. FAST RENDER
+            status.info("🎬 Rendering (Ultrafast Mode)...")
+            video_p = create_roast_video(img_path, audio_p, roast, 0)
+            
+            if video_p:
+                status.empty()
+                st.video(video_p)
+                st.success("Video generated successfully!")
 
-        st.markdown("---")
-
-    st.info(f"Groq model: {get_supported_model()} | ElevenLabs voice ID: {voice_id}")
-
-# Search bar
-query = st.text_input("Search Amazon products...", key="query_input")
-
-if st.session_state.query_input:
-    run_search(st.session_state.query_input)
-
-if st.button("Search"):
-    run_search(query)
+        except Exception as e:
+            st.error(f"Search failed: {str(e)}")
