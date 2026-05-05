@@ -1,8 +1,13 @@
 AI Influencer Roast
+
 🎯 Overview
 AI Influencer Roast is a creator‑ready pipeline that transforms Amazon product listings into short, vertical roast videos styled like influencer content. It combines product search, generative AI, voice synthesis, and video rendering into a seamless workflow — delivering clips that are instantly shareable on TikTok, Instagram, and YouTube Shorts.
 
 This project demonstrates how technical innovation can be packaged into a business‑ready product: not just an app, but a content engine for creators, brands, and entertainment platforms.
+
+# Demo video:
+ Part-1 : https://www.loom.com/share/f82cc412ed86454c88e10b8ee1910752
+ Part-2 : https://www.loom.com/share/8acb43107eab437b90be098853b0e612
 
 🚀 Vision & Strategy
 Creator Economy Alignment: Short‑form video dominates social platforms. AI Influencer Roast taps directly into this trend by automating roast content creation.
@@ -20,7 +25,7 @@ Branded roast campaigns for companies.
 Viral marketing tool for e‑commerce.
 
 🛠️ Technical Foundation
-Data Layer: Amazon product search via Rainforest API.
+Data Layer: Amazon product search via SERP API.
 
 AI Layer: Roast text generation using Groq LLMs.
 
@@ -57,17 +62,6 @@ bash
 pip install -r requirements.txt
 Set up environment variables
 
-Copy .env.example → .env
-
-Add your API keys:
-
-Code
-RAINFOREST_KEY=your_rainforest_api_key
-GROQ_API_KEY=your_groq_api_key
-ELEVENLABS_API_KEY=your_elevenlabs_api_key
-ELEVENLABS_VOICE_ID=your_voice_id
-Run the app
-
 bash
 streamlit run app.py
 Generate roast videos
@@ -77,5 +71,3 @@ Search for a product.
 Select persona & roast style.
 
 Watch roast text, audio, and video generate in real time.
-
-Download the roast video (vertical format, captioned, ready for TikTok/Instagram).
